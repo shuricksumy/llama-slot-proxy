@@ -1,0 +1,16 @@
+services:
+  llama-slot-proxy:
+    image: ghcr.io/shuricksumy/llama-slot-proxy:latest
+    container_name: llama-slot-proxy
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+    environment:
+      - CONFIG_PATH=/config/config.yaml
+      - LOG_LEVEL=INFO
+    # If llama-server itself runs as a Docker container on the same host/network,
+    # you can drop the ports mapping above and instead put this on the same
+    # Docker network as llama-server, then set llama_url in config.yaml to
+    # something like http://llama-server:18080 instead of an IP.

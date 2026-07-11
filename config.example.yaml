@@ -1,0 +1,32 @@
+# llama_slot_proxy configuration
+# Mount this file into the container at /config/config.yaml (see docker-compose.yml)
+
+# Where your real llama-server instance is running
+llama_url: "http://192.168.111.111:18080"
+
+# Optional - defaults shown
+listen_host: "0.0.0.0"
+listen_port: 8090
+
+# One entry per agent/caller. The key becomes the URL path, e.g.
+#   http://<proxy-host>:8090/router/v1/chat/completions
+agents:
+  router:
+    id_slot: 0
+    # Optional: force extra params onto every request for this agent
+    # (only applied if the caller didn't already set them)
+    extra_params:
+      cache_prompt: true
+
+  recipe:
+    id_slot: 1
+    extra_params:
+      cache_prompt: true
+
+  music:
+    id_slot: 2
+    extra_params:
+      cache_prompt: true
+
+  spare:
+    id_slot: 3
