@@ -11,6 +11,17 @@ request body based on the URL path, then forwards everything else
 untouched (including your `Authorization` header) straight to
 llama-server.
 
+## Related project
+
+[llama-service](https://github.com/shuricksumy/llama-service) is a
+companion repo that runs the `llama-server` side of this setup: a
+systemd-managed, Vulkan-backed `llama-server` with a vendored
+self-updating engine, a preset-based model switcher, and the
+`--parallel`/`--ctx-size`/`--cache-reuse`/etc. tuning this proxy
+expects on the other end (see "0. Launch llama-server with matching
+flags" below). Use it if you don't already have a `llama-server`
+instance to point this proxy at.
+
 ## 0. Launch llama-server with matching flags
 
 The goal of this whole setup: each agent gets its own slot with its own
