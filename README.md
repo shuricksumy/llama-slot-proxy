@@ -106,6 +106,27 @@ gets added to the outgoing request body *only if the caller didn't
 already set it*. Useful for forcing `cache_prompt: true` etc. without
 relying on every caller remembering to set it.
 
+If you want different agents to forward to different llama.cpp backends,
+add an optional `llama_url` under that agent. The proxy still uses the
+same local endpoint structure, but each agent can target its own upstream
+server while keeping a unique `id_slot`.
+
+Example:
+```yaml
+agents:
+  router:
+    id_slot: 0
+    llama_url: "http://127.0.0.1:18080"
+
+  recipe:
+    id_slot: 1
+    llama_url: "http://127.0.0.1:18085"
+```
+
+`id_slot` only needs to be unique *per backend* — each `llama_url` has its
+own independent slot pool, so two agents pointing at different servers can
+both use `id_slot: 0`.
+
 ## 2. Get an image
 
 Pull the pre-built image, published by the `docker-publish` GitHub Action

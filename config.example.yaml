@@ -10,9 +10,14 @@ listen_port: 8090
 
 # One entry per agent/caller. The key becomes the URL path, e.g.
 #   http://<proxy-host>:8090/router/v1/chat/completions
+#
+# If you run multiple llama.cpp/llama-server backends, you can optionally
+# override the upstream per agent with `llama_url` here. Otherwise the
+# top-level `llama_url` is used for every agent.
 agents:
   router:
     id_slot: 0
+    llama_url: "http://192.168.111.111:18080"
     # Optional: force extra params onto every request for this agent
     # (only applied if the caller didn't already set them)
     extra_params:
@@ -20,13 +25,23 @@ agents:
 
   recipe:
     id_slot: 1
+    llama_url: "http://192.168.111.111:18080"
     extra_params:
       cache_prompt: true
 
   music:
     id_slot: 2
+    llama_url: "http://192.168.111.111:18080"
     extra_params:
       cache_prompt: true
 
   spare:
     id_slot: 3
+    llama_url: "http://192.168.111.111:18080"
+
+  # Separate llama-server process (e.g. Qwen3-Embedding-0.6B-GGUF) on its
+  # own port. id_slot only needs to be unique within a given llama_url,
+  # since each llama-server has its own independent slot pool.
+  embedding:
+    id_slot: 0
+    llama_url: "http://192.168.111.111:18085"

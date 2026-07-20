@@ -24,6 +24,9 @@ def load_config(path):
     if "llama_url" not in cfg:
         log.error("Config missing required top-level key: llama_url")
         sys.exit(1)
+    if not isinstance(cfg["llama_url"], str):
+        log.error("Config key llama_url must be a string")
+        sys.exit(1)
     if "agents" not in cfg or not isinstance(cfg["agents"], dict) or not cfg["agents"]:
         log.error("Config missing required top-level key: agents (must be a non-empty mapping)")
         sys.exit(1)
@@ -31,6 +34,9 @@ def load_config(path):
     for name, agent_cfg in cfg["agents"].items():
         if "id_slot" not in agent_cfg:
             log.error(f"Agent '{name}' is missing required field: id_slot")
+            sys.exit(1)
+        if "llama_url" in agent_cfg and not isinstance(agent_cfg["llama_url"], str):
+            log.error(f"Agent '{name}' llama_url must be a string if provided")
             sys.exit(1)
 
     return cfg
@@ -45,7 +51,8 @@ LISTEN_PORT = int(CONFIG.get("listen_port", 8090))
 log.info(f"Loaded config from {CONFIG_PATH}")
 log.info(f"Forwarding to llama.cpp at {LLAMA_URL}")
 for name, agent_cfg in AGENTS.items():
-    log.info(f"  agent '{name}' -> id_slot {agent_cfg['id_slot']}")
+    agent_url = agent_cfg.get("llama_url", LLAMA_URL)
+    log.info(f"  agent '{name}' -> id_slot {agent_cfg['id_slot']}, upstream {agent_url}")
 
 
 async def health(request):
@@ -88,7 +95,8 @@ async def proxy(request):
         payload.setdefault(key, value)
 
     tail = request.match_info["tail"] or "/"
-    target_url = f"{LLAMA_URL}{tail}"
+    base_url = agent_cfg.get("llama_url", LLAMA_URL).rstrip("/")
+    target_url = f"{base_url}{tail}"
 
     forward_headers = {
         k: v for k, v in request.headers.items()
