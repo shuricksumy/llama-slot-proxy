@@ -89,10 +89,16 @@ llama_url: "http://192.168.111.111:18080"   # your real llama-server
 agents:
   router:
     id_slot: 0
+    extra_params:
+      cache_prompt: true
   recipe:
     id_slot: 1
+    extra_params:
+      cache_prompt: true
   music:
     id_slot: 2
+    extra_params:
+      cache_prompt: true
   spare:
     id_slot: 3
 ```
@@ -106,26 +112,45 @@ gets added to the outgoing request body *only if the caller didn't
 already set it*. Useful for forcing `cache_prompt: true` etc. without
 relying on every caller remembering to set it.
 
-If you want different agents to forward to different llama.cpp backends,
-add an optional `llama_url` under that agent. The proxy still uses the
-same local endpoint structure, but each agent can target its own upstream
-server while keeping a unique `id_slot`.
+If you want different agents to forward to different llama.cpp backends
+(e.g. a separate embedding model running as its own `llama-server`
+process on another port), add an optional `llama_url` under that agent.
+The proxy still uses the same local endpoint structure, but each agent
+can target its own upstream server while keeping its own `id_slot`.
 
-Example:
+Example - `router`/`recipe`/`music`/`spare` share the main server, while
+`embedding` points at a separate `Qwen3-Embedding-0.6B-GGUF` instance:
+
 ```yaml
 agents:
   router:
     id_slot: 0
-    llama_url: "http://127.0.0.1:18080"
-
+    llama_url: "http://192.168.111.111:18080"
+    extra_params:
+      cache_prompt: true
   recipe:
     id_slot: 1
-    llama_url: "http://127.0.0.1:18085"
+    llama_url: "http://192.168.111.111:18080"
+    extra_params:
+      cache_prompt: true
+  music:
+    id_slot: 2
+    llama_url: "http://192.168.111.111:18080"
+    extra_params:
+      cache_prompt: true
+  spare:
+    id_slot: 3
+    llama_url: "http://192.168.111.111:18080"
+
+  embedding:
+    id_slot: 0
+    llama_url: "http://192.168.111.111:18085"
 ```
 
 `id_slot` only needs to be unique *per backend* — each `llama_url` has its
 own independent slot pool, so two agents pointing at different servers can
-both use `id_slot: 0`.
+both use `id_slot: 0`. If an agent omits `llama_url`, it falls back to the
+top-level `llama_url`.
 
 ## 2. Get an image
 
