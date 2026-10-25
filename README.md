@@ -152,6 +152,33 @@ own independent slot pool, so two agents pointing at different servers can
 both use `id_slot: 0`. If an agent omits `llama_url`, it falls back to the
 top-level `llama_url`.
 
+### Upstream timeout
+
+By default the proxy waits up to **1800 seconds** (30 minutes) for
+llama-server to answer a single request. Long generations (e.g. parsing
+multi-page documents) can exceed shorter limits, so this is configurable:
+
+```yaml
+upstream_timeout: 1800        # top-level default for all agents (seconds)
+
+agents:
+  statements:
+    id_slot: 0
+    upstream_timeout: 3600    # optional per-agent override
+```
+
+The `UPSTREAM_TIMEOUT` env var overrides the top-level config value
+(per-agent values still win for their agent). The value is re-read on
+`/_reload`, and the effective timeout is logged at startup for every
+agent. When the timeout is hit, the proxy returns `504 Gateway Timeout`
+(other upstream failures return `502`), with the error type in the
+JSON `detail`.
+
+**Note:** llama-server has its own `--timeout` (server read/write
+timeout, default 600s). For generations longer than that you must
+raise it on llama-server as well, otherwise llama-server will drop the
+connection before the proxy's timeout is reached.
+
 ## 2. Get an image
 
 Pull the pre-built image, published by the `docker-publish` GitHub Action

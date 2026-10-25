@@ -1,9 +1,10 @@
 import os
 import sys
+import asyncio
 import json
 import logging
 import yaml
-from aiohttp import web, ClientSession
+from aiohttp import web, ClientSession, ClientTimeout
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -12,6 +13,11 @@ logging.basicConfig(
 log = logging.getLogger("llama-slot-proxy")
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "/config/config.yaml")
+DEFAULT_UPSTREAM_TIMEOUT = 1800
+
+
+def is_valid_timeout(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
 
 
 def load_config(path):
@@ -31,12 +37,28 @@ def load_config(path):
         log.error("Config missing required top-level key: agents (must be a non-empty mapping)")
         sys.exit(1)
 
+    # UPSTREAM_TIMEOUT env var overrides the config file value
+    env_timeout = os.environ.get("UPSTREAM_TIMEOUT")
+    if env_timeout:
+        try:
+            cfg["upstream_timeout"] = float(env_timeout)
+        except ValueError:
+            log.error(f"UPSTREAM_TIMEOUT env var must be a number, got '{env_timeout}'")
+            sys.exit(1)
+    cfg.setdefault("upstream_timeout", DEFAULT_UPSTREAM_TIMEOUT)
+    if not is_valid_timeout(cfg["upstream_timeout"]):
+        log.error("Config key upstream_timeout must be a positive number (seconds)")
+        sys.exit(1)
+
     for name, agent_cfg in cfg["agents"].items():
         if "id_slot" not in agent_cfg:
             log.error(f"Agent '{name}' is missing required field: id_slot")
             sys.exit(1)
         if "llama_url" in agent_cfg and not isinstance(agent_cfg["llama_url"], str):
             log.error(f"Agent '{name}' llama_url must be a string if provided")
+            sys.exit(1)
+        if "upstream_timeout" in agent_cfg and not is_valid_timeout(agent_cfg["upstream_timeout"]):
+            log.error(f"Agent '{name}' upstream_timeout must be a positive number (seconds) if provided")
             sys.exit(1)
 
     return cfg
@@ -45,14 +67,20 @@ def load_config(path):
 CONFIG = load_config(CONFIG_PATH)
 LLAMA_URL = CONFIG["llama_url"].rstrip("/")
 AGENTS = CONFIG["agents"]
+UPSTREAM_TIMEOUT = CONFIG["upstream_timeout"]
 LISTEN_HOST = CONFIG.get("listen_host", "0.0.0.0")
 LISTEN_PORT = int(CONFIG.get("listen_port", 8090))
 
 log.info(f"Loaded config from {CONFIG_PATH}")
 log.info(f"Forwarding to llama.cpp at {LLAMA_URL}")
+log.info(f"Upstream timeout: {UPSTREAM_TIMEOUT:g}s")
 for name, agent_cfg in AGENTS.items():
     agent_url = agent_cfg.get("llama_url", LLAMA_URL)
-    log.info(f"  agent '{name}' -> id_slot {agent_cfg['id_slot']}, upstream {agent_url}")
+    agent_timeout = agent_cfg.get("upstream_timeout", UPSTREAM_TIMEOUT)
+    log.info(
+        f"  agent '{name}' -> id_slot {agent_cfg['id_slot']}, upstream {agent_url}, "
+        f"timeout {agent_timeout:g}s"
+    )
 
 
 async def health(request):
@@ -61,14 +89,15 @@ async def health(request):
 
 async def reload_config(request):
     """POST /_reload - re-read the config file without restarting the container."""
-    global CONFIG, LLAMA_URL, AGENTS
+    global CONFIG, LLAMA_URL, AGENTS, UPSTREAM_TIMEOUT
     try:
         CONFIG = load_config(CONFIG_PATH)
     except SystemExit:
         return web.json_response({"error": "failed to reload config, check logs"}, status=500)
     LLAMA_URL = CONFIG["llama_url"].rstrip("/")
     AGENTS = CONFIG["agents"]
-    log.info("Config reloaded")
+    UPSTREAM_TIMEOUT = CONFIG["upstream_timeout"]
+    log.info(f"Config reloaded (upstream timeout {UPSTREAM_TIMEOUT:g}s)")
     return web.json_response({"status": "reloaded", "agents": list(AGENTS.keys())})
 
 
@@ -97,6 +126,7 @@ async def proxy(request):
     tail = request.match_info["tail"] or "/"
     base_url = agent_cfg.get("llama_url", LLAMA_URL).rstrip("/")
     target_url = f"{base_url}{tail}"
+    timeout = agent_cfg.get("upstream_timeout", UPSTREAM_TIMEOUT)
 
     forward_headers = {
         k: v for k, v in request.headers.items()
@@ -104,7 +134,7 @@ async def proxy(request):
     }
 
     try:
-        async with ClientSession() as session:
+        async with ClientSession(timeout=ClientTimeout(total=timeout, sock_read=timeout)) as session:
             async with session.request(
                 request.method,
                 target_url,
@@ -118,8 +148,12 @@ async def proxy(request):
                     content_type=resp.content_type,
                 )
     except Exception as e:
-        log.error(f"Error proxying request for agent '{agent}': {e}")
-        return web.json_response({"error": "upstream request failed", "detail": str(e)}, status=502)
+        log.error(f"Error proxying request for agent '{agent}': {type(e).__name__}: {e}")
+        status = 504 if isinstance(e, asyncio.TimeoutError) else 502
+        return web.json_response(
+            {"error": "upstream request failed", "detail": f"{type(e).__name__}: {e}"},
+            status=status,
+        )
 
 
 app = web.Application()
